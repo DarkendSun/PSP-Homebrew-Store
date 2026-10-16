@@ -10,11 +10,24 @@ jobs:
     runs-on: ubuntu-latest
     container: pspdev/pspdev:latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Build
         working-directory: app
+        shell: sh
         # Set the repository variable RELAY_URL (Settings > Secrets and variables > Actions > Variables)
-        run: make RELAY="${{ vars.RELAY_URL || 'http://psp-homebrew-relay.YOUR-SUBDOMAIN.workers.dev' }}"
+        run: |
+          set +e
+          make RELAY="${{ vars.RELAY_URL || 'http://psp-homebrew-relay.YOUR-SUBDOMAIN.workers.dev' }}" > build.log 2>&1
+          status=$?
+          cat build.log
+          # compiler and linker errors as annotations, which show on the run page without signing in
+          grep -E "(error|undefined reference|No such file)" build.log | head -40 | while IFS= read -r line; do
+            f=$(echo "$line" | sed -n 's/^\([^:]*\.[ch]\):\([0-9]*\):.*/\1/p')
+            l=$(echo "$line" | sed -n 's/^\([^:]*\.[ch]\):\([0-9]*\):.*/\2/p')
+            msg=$(echo "$line" | sed 's/%/%25/g')
+            if [ -n "$f" ]; then echo "::error file=app/$f,line=$l::$msg"; else echo "::error::$msg"; fi
+          done
+          exit $status
       - uses: actions/upload-artifact@v4
         with:
           name: hbstore-EBOOT
