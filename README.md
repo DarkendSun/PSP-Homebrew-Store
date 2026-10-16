@@ -63,8 +63,8 @@ account.
 - `GET /dl/<id>/<file>`: streams `https://archive.org/download/<id>/<file>`, only when that pair is in the
   catalogue. It refuses redirects away from archive.org and retries once if archive.org has a hiccup.
 - **Rate limit:** 60 requests a minute per IP, using Cloudflare's rate-limit binding.
-- **Optional friends token:** set the `FRIENDS_TOKEN` secret, and every request then needs the
-  `X-Friends-Token` header. Friends enter the token in the app under SELECT > Settings.
+- **No login or token:** anyone with the address can read the catalogue and fetch the listed files. The
+  allow-list and the rate limit stop it being used for anything else.
 
 Run it locally (tested):
 
@@ -82,10 +82,9 @@ Then point the app (or `curl`) at `http://<this PC's LAN IP>:8787`.
 cd relay
 npx wrangler login
 npx wrangler deploy
-npx wrangler secret put FRIENDS_TOKEN
 ```
 
-The last command is optional. Each `deploy` publishes whatever is in `relay/public/`, so run the generator
+Each `deploy` publishes whatever is in `relay/public/`, so run the generator
 first.
 
 **Plain HTTP:** `workers.dev` answers plain `http://` as well as `https://` and doesn't redirect, so
@@ -123,12 +122,11 @@ Make a folder named `HBSTORE` with the `EBOOT.PBP` in it. In the PSP CFW Helper,
 Infinity/CFW**, add that folder under **Extra apps**, then click Preview and **Back up and copy**. On the PSP
 it's under **Game > Memory Stick > PSP Homebrew Store**. CFW (PRO) must be loaded.
 
-The relay address is built in. You can change it, and set the friends token, under **SELECT > Settings**
-(using the PSP's keyboard), or in `PSP/GAME/HBSTORE/config.txt`:
+The relay address is built in. You can change it under **SELECT > Settings** (using the PSP's keyboard),
+or in `PSP/GAME/HBSTORE/config.txt`:
 
 ```
 relay=http://psp-homebrew-relay.<you>.workers.dev
-token=
 ```
 
 ### Using it
@@ -140,7 +138,7 @@ token=
 | Square | show installed only | uninstall (only folders it installed) |
 | Triangle | search (PSP keyboard) | |
 | START | connect (PSP's own Wi-Fi dialog) and fetch the catalogue | |
-| SELECT | settings: relay, token, free space | |
+| SELECT | settings: relay address, free space | |
 | O | | back / cancel a download |
 
 - **Installing:** the app downloads into `PSP/HBSTORE_TMP/` and checks the SHA-1. It unpacks only the app

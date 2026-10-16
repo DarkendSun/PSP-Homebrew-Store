@@ -17,5 +17,4 @@
     { "name": "RATE_LIMITER", "namespace_id": "4271", "simple": { "limit": 60, "period": 60 } }
   ],
   "observability": { "enabled": false }
-  // Optional friends token: npx wrangler secret put FRIENDS_TOKEN
 }

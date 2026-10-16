@@ -102,7 +102,7 @@ static int wait_readable(int s, int ms)
 	return sceNetInetPoll(&p, 1, ms);
 }
 
-int http_get(const char *url, const char *token, const char *out_path, SceKernelUtilsSha1Context *sha1,
+int http_get(const char *url, const char *out_path, SceKernelUtilsSha1Context *sha1,
              unsigned char **mem, int *memlen, int maxmem, hb_progress cb, void *ctx, char *err, int errlen)
 {
 	char host[128], req[1536], head[4096];
@@ -150,9 +150,8 @@ int http_get(const char *url, const char *token, const char *out_path, SceKernel
 		goto done;
 	}
 	snprintf(req, sizeof(req),
-	         "GET %s HTTP/1.0\r\nHost: %s\r\nUser-Agent: PSP-Homebrew-Store\r\n%s%s%sConnection: close\r\n\r\n",
-	         path, host, token && *token ? "X-Friends-Token: " : "", token && *token ? token : "",
-	         token && *token ? "\r\n" : "");
+	         "GET %s HTTP/1.0\r\nHost: %s\r\nUser-Agent: PSP-Homebrew-Store\r\nConnection: close\r\n\r\n",
+	         path, host);
 	if ((int)sceNetInetSend(s, req, strlen(req), 0) != (int)strlen(req)) {
 		snprintf(err, errlen, "Couldn't send the request.");
 		goto done;
@@ -182,8 +181,7 @@ int http_get(const char *url, const char *token, const char *out_path, SceKernel
 				if (!strncasecmp(cl + 1, "content-length:", 15))
 					clen = atoll(cl + 16);
 			if (status != 200) {
-				snprintf(err, errlen, status == 401 ? "The relay needs the friends token (SELECT > Settings)." :
-				         status == 429 ? "Too many requests; wait a minute and try again." :
+				snprintf(err, errlen, status == 429 ? "Too many requests; wait a minute and try again." :
 				         status == 404 ? "The relay doesn't have that file." :
 				         "The relay answered HTTP %d.", status);
 				goto done;

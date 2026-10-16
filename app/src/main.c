@@ -30,7 +30,7 @@ static volatile int running = 1;
 static hb_catalogue cat;
 static int *view, nview, sel, top, installed_only;
 static long long free_bytes = -1;
-static char search[64], relay[160] = HB_DEFAULT_RELAY, token[80], msg[512];
+static char search[64], relay[160] = HB_DEFAULT_RELAY, msg[512];
 
 /* ------------------------------------------------------------ HOME button */
 
@@ -69,8 +69,6 @@ static void load_config(void)
 	for (line = strtok((char *)buf, "\r\n"); line; line = strtok(NULL, "\r\n")) {
 		if (!strncmp(line, "relay=", 6))
 			snprintf(relay, sizeof(relay), "%s", line + 6);
-		else if (!strncmp(line, "token=", 6))
-			snprintf(token, sizeof(token), "%s", line + 6);
 	}
 	free(buf);
 	while (*relay && relay[strlen(relay) - 1] == '/')
@@ -81,7 +79,7 @@ static void save_config(void)
 {
 	char path[HB_PATH], body[300];
 	app_path("config.txt", path, sizeof(path));
-	snprintf(body, sizeof(body), "relay=%s\ntoken=%s\n", relay, token);
+	snprintf(body, sizeof(body), "relay=%s\n", relay);
 	hb_write_file(path, body, (int)strlen(body));
 }
 
@@ -185,7 +183,7 @@ static void self_update(void)
 	if (!ui_confirm("Update available", ask))
 		return;
 	snprintf(url, sizeof(url), "%s/app/EBOOT.PBP", relay);
-	if (http_get(url, token, NULL, NULL, &buf, &len, 16 * 1024 * 1024, progress, &pc, err, sizeof(err)) < 0) {
+	if (http_get(url, NULL, NULL, &buf, &len, 16 * 1024 * 1024, progress, &pc, err, sizeof(err)) < 0) {
 		ui_message("Update", err);
 		return;
 	}
@@ -223,12 +221,12 @@ static void refresh(void)
 	if (!ensure_wifi())
 		return;
 	snprintf(url, sizeof(url), "%s/catalogue.sig", relay);
-	if (http_get(url, token, NULL, NULL, &sig, &sl, 1024, progress, &pc, err, sizeof(err)) < 0) {
+	if (http_get(url, NULL, NULL, &sig, &sl, 1024, progress, &pc, err, sizeof(err)) < 0) {
 		ui_message("Catalogue", err);
 		return;
 	}
 	snprintf(url, sizeof(url), "%s/catalogue.txt", relay);
-	if (http_get(url, token, NULL, NULL, &txt, &tl, MAX_CATALOGUE, progress, &pc, err, sizeof(err)) < 0) {
+	if (http_get(url, NULL, NULL, &txt, &tl, MAX_CATALOGUE, progress, &pc, err, sizeof(err)) < 0) {
 		free(sig);
 		ui_message("Catalogue", err);
 		return;
@@ -296,7 +294,7 @@ static void install(hb_entry *e)
 	}
 	snprintf(url, sizeof(url), "%s/dl/%s/%s", relay, id, file);
 	sceKernelUtilsSha1BlockInit(&sha);
-	r = http_get(url, token, zip, &sha, NULL, NULL, 0, progress, &pc, err, sizeof(err));
+	r = http_get(url, zip, &sha, NULL, NULL, 0, progress, &pc, err, sizeof(err));
 	if (r < 0) {
 		ui_message("Download", err);
 		return;
@@ -330,8 +328,6 @@ static void settings(void)
 		ui_header("Settings", APP_VERSION);
 		ui_at(1, 3, C_DIM, "Relay address:");
 		ui_wrap(3, 4, UI_COLS - 4, 2, C_TEXT, relay);
-		ui_at(1, 7, C_DIM, "Friends token:");
-		ui_at(3, 8, C_TEXT, "%s", *token ? "(set)" : "(none)");
 		ui_at(1, 10, C_DIM, "Free space: %s", fr);
 		ui_at(1, 11, C_DIM, "Catalogue: %d apps, made %s", cat.count, cat.generated ? cat.generated : "-");
 		ui_wrap(1, 14, UI_COLS - 2, 8, C_DIM,
@@ -339,19 +335,13 @@ static void settings(void)
 		        "made by many different people. You use it at your own risk. The catalogue is signed "
 		        "and every download is checked against it. Apps go to PSP/GAME/<folder>/; "
 		        "PSP/GAME/UPDATE is never touched.");
-		ui_footer("X edit relay   [] edit token   O back");
+		ui_footer("X edit relay   O back");
 		ui_end();
 		b = ui_pressed();
 		if (b & PSP_CTRL_CROSS) {
 			char v[160];
 			if (ui_osk("Relay address (http://...)", relay, v, sizeof(v))) {
 				snprintf(relay, sizeof(relay), "%s", v);
-				save_config();
-			}
-		} else if (b & PSP_CTRL_SQUARE) {
-			char v[80];
-			if (ui_osk("Friends token (leave empty for none)", token, v, sizeof(v))) {
-				snprintf(token, sizeof(token), "%s", v);
 				save_config();
 			}
 		} else if ((b & PSP_CTRL_CIRCLE) || !running) {

@@ -5,7 +5,6 @@
 // listed in the signed catalogue. It is not an open proxy. The PSP can't do modern TLS, so it
 // talks plain HTTP to this Worker and the Worker fetches archive.org over HTTPS.
 //
-// Optional: FRIENDS_TOKEN (a secret). When set, every request needs it in the X-Friends-Token header.
 // Rate limit: the RATE_LIMITER binding (per client IP), with a per-isolate fallback.
 
 const STATIC = new Set(["/catalogue.txt", "/catalogue.sig", "/app/EBOOT.PBP"]);
@@ -18,13 +17,6 @@ function text(status, body, extra = {}) {
     status,
     headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store", ...extra },
   });
-}
-
-function sameToken(a, b) {
-  if (typeof a !== "string" || a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return diff === 0;
 }
 
 async function allowed(env, ip) {
@@ -103,9 +95,6 @@ export default {
     const url = new URL(request.url);
     const ip = request.headers.get("cf-connecting-ip") || "local";
 
-    if (env.FRIENDS_TOKEN && !sameToken(request.headers.get("x-friends-token"), env.FRIENDS_TOKEN)) {
-      return text(401, "friends token needed");
-    }
     if (!(await allowed(env, ip))) return text(429, "slow down", { "retry-after": "60" });
 
     if (url.pathname === "/") return text(200, "PSP Homebrew Store relay. Point the PSP app at this address.");
