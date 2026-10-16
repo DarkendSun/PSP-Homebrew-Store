@@ -25,7 +25,10 @@ MAX_ASSET = 50 * 1024 * 1024
 # CFW installers, flashers and firmware tools don't belong in an app store
 EXCLUDE = re.compile(r"(^|[^a-z])ark([^a-z]|$)|arkmenu|\bcfw\b|custom.?firmware|flasher|downgrad|"
                      r"chronoswitch|infinity|pro_custom|minimum_edition|^leda$|xmbctrl|customhome|autoboot|"
-                     r"\bipl\b|pandora|despertar", re.I)
+                     r"\bipl\b|pandora|despertar|region.?changer|"
+                     # tools that fetch games, ROMs or streams rather than being homebrew themselves
+                     r"\bromm\b|rom.?(library|downloader|manager)|download(s|ing)? games|stream any (video|movie)|"
+                     r"original (game )?data files|iso.?(loader|downloader)", re.I)
 OPEN_LICENSES = {"MIT", "BSD-2-Clause", "BSD-3-Clause", "Apache-2.0", "GPL-2.0", "GPL-3.0", "LGPL-2.1",
                  "LGPL-3.0", "AGPL-3.0", "MPL-2.0", "Unlicense", "Zlib", "ISC", "CC0-1.0", "0BSD",
                  "GPL-2.0-only", "GPL-2.0-or-later", "GPL-3.0-only", "GPL-3.0-or-later", "BSL-1.0", "WTFPL"}
@@ -133,7 +136,13 @@ def zip_listing(path):
         return [(i.filename, i.file_size) for i in z.infolist() if not i.is_dir()]
 
 
-def entries(cache_dir, delay, extra_file, apps_in, ascii_text, log=print):
+def read_list(path):
+    if not path or not path.is_file():
+        return set()
+    return {line.split("#")[0].strip().lower() for line in path.read_text(encoding="utf-8").splitlines()} - {""}
+
+
+def entries(cache_dir, delay, extra_file, apps_in, ascii_text, log=print, exclude_file=None):
     """Catalogue entries from GitHub releases, plus a skip count per reason."""
     out = []
     skipped = {"no open license": 0, "CFW/flasher": 0, "no release": 0, "no zip asset": 0,
@@ -144,8 +153,13 @@ def entries(cache_dir, delay, extra_file, apps_in, ascii_text, log=print):
         log("  GitHub rate limit reached while listing repos; set GITHUB_TOKEN or try again in an hour.")
         return out, skipped
     log(f"  GitHub: {len(repos)} candidate repos")
+    denied = read_list(exclude_file)
+    skipped["excluded"] = 0
     for r in sorted(repos, key=lambda r: r["full_name"].lower()):
         name = r["full_name"]
+        if name.lower() in denied:
+            skipped["excluded"] += 1
+            continue
         if EXCLUDE.search(r["name"]) or EXCLUDE.search(r.get("description") or ""):
             skipped["CFW/flasher"] += 1
             continue

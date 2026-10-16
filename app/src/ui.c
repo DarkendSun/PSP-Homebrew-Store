@@ -75,8 +75,20 @@ int ui_wrap(int x, int y, int width, int maxlines, unsigned color, const char *t
 {
 	int lines = 0;
 	while (*text && lines < maxlines) {
-		int n = (int)strlen(text), cut = n;
+		int n = (int)strlen(text), cut = n, i;
 		char line[UI_COLS + 1];
+		for (i = 0; i < n && i <= width; i++)
+			if (text[i] == '\n')
+				break;
+		if (i < n && i <= width && text[i] == '\n') {   /* explicit line break */
+			memcpy(line, text, i);
+			line[i] = 0;
+			if (i)
+				ui_at(x, y + lines, color, "%s", line);
+			lines++;
+			text += i + 1;
+			continue;
+		}
 		if (n > width) {
 			cut = width;
 			while (cut > 0 && text[cut] != ' ')

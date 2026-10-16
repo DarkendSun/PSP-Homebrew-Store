@@ -247,6 +247,14 @@ static void refresh(void)
 	free(sig);
 }
 
+/* the download and staging folder live in PSP/HBSTORE_TMP; leave nothing behind */
+static void clean_tmp(void)
+{
+	char tmp[HB_PATH];
+	inst_tmp_dir(tmp, sizeof(tmp));
+	hb_rmtree(tmp);
+}
+
 static void install(hb_entry *e)
 {
 	char ask[400], sz[16], fr[16], url[700], id[200], file[400], zip[HB_PATH], err[200], hex[41];
@@ -296,19 +304,20 @@ static void install(hb_entry *e)
 	sceKernelUtilsSha1BlockInit(&sha);
 	r = http_get(url, zip, &sha, NULL, NULL, 0, progress, &pc, err, sizeof(err));
 	if (r < 0) {
+		clean_tmp();
 		ui_message("Download", err);
 		return;
 	}
 	sceKernelUtilsSha1BlockResult(&sha, digest);
 	hb_hex(digest, 20, hex);
 	if (strcasecmp(hex, e->sha1)) {
-		sceIoRemove(zip);
+		clean_tmp();
 		ui_message("Download", "The download doesn't match the catalogue's checksum, so it was deleted.");
 		return;
 	}
 	pc.what = "Installing...";
 	r = inst_install(e, zip, progress, &pc, err, sizeof(err));
-	sceIoRemove(zip);
+	clean_tmp();
 	if (r < 0) {
 		ui_message("Install", err);
 		return;

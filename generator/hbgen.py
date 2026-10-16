@@ -39,6 +39,7 @@ OUT_TXT = ROOT / "relay" / "public" / "catalogue.txt"
 OUT_SIG = ROOT / "relay" / "public" / "catalogue.sig"
 OUT_JSON = ROOT / "generator" / "out" / "catalogue.json"
 GH_REPOS = ROOT / "generator" / "github_repos.txt"
+GH_EXCLUDE = ROOT / "generator" / "github_exclude.txt"
 APP_EBOOT = ROOT / "relay" / "public" / "app" / "EBOOT.PBP"
 VERSION_H = ROOT / "app" / "src" / "version.h"
 PUBKEY_H = ROOT / "app" / "src" / "pubkey.h"
@@ -285,7 +286,8 @@ def cmd_build(args):
     counts = {"archive.org": len(entries), "GitHub": 0, "duplicates dropped": 0}
     if not args.no_github:
         print("Checking GitHub releases...")
-        gh, gh_skipped = github_source.entries(CACHE / "github", args.github_delay, GH_REPOS, apps_in, ascii_text)
+        gh, gh_skipped = github_source.entries(CACHE / "github", args.github_delay, GH_REPOS, apps_in, ascii_text,
+                                                 exclude_file=GH_EXCLUDE)
         keys = set()
         for e in gh:
             keys.add(stem_key(e["title"]))

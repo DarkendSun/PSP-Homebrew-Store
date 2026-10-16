@@ -1,0 +1,6 @@
+# GitHub repos never listed, even with an open-source license (owner/name  # reason)
+amdray/bounce_zero            # port that ships the original commercial game's data files
+chiva/skiff                   # client for downloading games/ROMs from a ROM library
+dreimer1986/PSPStreamer       # streams movies/series from third-party sites
+dreimer1986/PSPStreamerHA     # same as PSPStreamer
+PSP-Archive/UMD_Region_Changer  # system tool that patches the firmware's UMD region handling
