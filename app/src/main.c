@@ -409,7 +409,7 @@ static void list_screen(void)
 		ui_at(0, 3 + i, e->kind[0] == 'g' ? C_GAME : C_APP, "%c", e->kind[0] == 'g' ? 'G' : 'A');
 		ui_at(2, 3 + i, on ? C_SEL : C_TEXT, "%s%-.52s", on ? "> " : "  ", e->title);
 	}
-	ui_footer("X open  /\\ search  [] installed  START fetch  SELECT settings");
+	ui_footer("X open /\\ search [] installed START fetch SELECT settings");
 	ui_end();
 
 	b = ui_pressed();

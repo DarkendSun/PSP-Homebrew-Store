@@ -109,7 +109,8 @@ int http_get(const char *url, const char *out_path, SceKernelUtilsSha1Context *s
 {
 	char host[128], req[1536], head[4096];
 	const char *p, *path;
-	int port = 80, s = -1, hlen = 0, status = 0, rc = -1, idle = 0, e = 0;
+	int port = 80, s = -1, hlen = 0, status = 0, rc = -1, e = 0;
+	u64 last_data = 0;
 	unsigned int tmo = RECV_TIMEOUT_US;
 	long long clen = -1, got = 0;
 	SceUID out = -1;
@@ -156,6 +157,7 @@ int http_get(const char *url, const char *out_path, SceKernelUtilsSha1Context *s
 	         "GET %s HTTP/1.0\r\nHost: %s\r\nUser-Agent: PSP-Homebrew-Store\r\nConnection: close\r\n\r\n",
 	         path, host);
 	sceNetInetSetsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &tmo, sizeof(tmo));
+	last_data = sceKernelGetSystemTimeWide();
 	if ((int)sceNetInetSend(s, req, strlen(req), 0) != (int)strlen(req)) {
 		snprintf(err, errlen, "Couldn't send the request.");
 		goto done;
@@ -167,7 +169,8 @@ int http_get(const char *url, const char *out_path, SceKernelUtilsSha1Context *s
 		char *end;
 		n = recv_some(s, head + hlen, sizeof(head) - 1 - hlen, &e);
 		if (n == RECV_TIMEOUT) {
-			if (++idle > 30) {   /* ~15 s */
+			sceKernelDelayThread(10000);   /* recv may return at once instead of waiting */
+			if (sceKernelGetSystemTimeWide() - last_data > 15000000ULL) {   /* 15 s */
 				snprintf(err, errlen, "The relay didn't answer.");
 				goto done;
 			}
@@ -186,7 +189,7 @@ int http_get(const char *url, const char *out_path, SceKernelUtilsSha1Context *s
 			snprintf(err, errlen, "The connection closed early.");
 			goto done;
 		}
-		idle = 0;
+		last_data = sceKernelGetSystemTimeWide();
 		hlen += n;
 		head[hlen] = 0;
 		end = strstr(head, "\r\n\r\n");
@@ -271,7 +274,8 @@ int http_get(const char *url, const char *out_path, SceKernelUtilsSha1Context *s
 			break;
 		n = recv_some(s, buf, sizeof(buf), &e);
 		if (n == RECV_TIMEOUT) {
-			if (++idle > 40) {   /* ~20 s with no data */
+			sceKernelDelayThread(10000);
+			if (sceKernelGetSystemTimeWide() - last_data > 20000000ULL) {   /* 20 s with no data */
 				snprintf(err, errlen, "The download stalled.");
 				goto done;
 			}
@@ -281,7 +285,7 @@ int http_get(const char *url, const char *out_path, SceKernelUtilsSha1Context *s
 			snprintf(err, errlen, "Network error (%d).", e);
 			goto done;
 		}
-		idle = 0;
+		last_data = sceKernelGetSystemTimeWide();
 		if (n == 0)
 			break;
 		hlen = n;
