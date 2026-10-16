@@ -13,10 +13,6 @@
 #include "net.h"
 #include "ui.h"
 
-#ifndef POLLIN
-#define POLLIN 0x0001
-#endif
-
 static int modules_loaded, stack_up;
 
 int net_ready(void)
@@ -92,14 +88,20 @@ static int resolve(const char *host, struct in_addr *addr)
 	return rc < 0 ? -1 : 0;
 }
 
-/* wait up to ms for data; 1 ready, 0 timeout, -1 error */
-static int wait_readable(int s, int ms)
+#define RECV_TIMEOUT_US 500000   /* each recv waits at most this long, so Cancel stays responsive */
+#define RECV_TIMEOUT -3
+
+/* > 0 bytes, 0 closed, RECV_TIMEOUT (no data yet), -1 error (errno in *e) */
+static int recv_some(int s, void *buf, int len, int *e)
 {
-	SceNetInetPollfd p;
-	p.fd = s;
-	p.events = POLLIN;
-	p.revents = 0;
-	return sceNetInetPoll(&p, 1, ms);
+	int n = (int)sceNetInetRecv(s, buf, len, 0);
+	if (n >= 0)
+		return n;
+	*e = sceNetInetGetErrno();
+	/* EAGAIN / EWOULDBLOCK / ETIMEDOUT in the PSP's and the common errno numberings */
+	if (*e == 11 || *e == 35 || *e == 60 || *e == 110 || *e == 0x0B)
+		return RECV_TIMEOUT;
+	return -1;
 }
 
 int http_get(const char *url, const char *out_path, SceKernelUtilsSha1Context *sha1,
@@ -107,7 +109,8 @@ int http_get(const char *url, const char *out_path, SceKernelUtilsSha1Context *s
 {
 	char host[128], req[1536], head[4096];
 	const char *p, *path;
-	int port = 80, s = -1, hlen = 0, status = 0, rc = -1, idle = 0;
+	int port = 80, s = -1, hlen = 0, status = 0, rc = -1, idle = 0, e = 0;
+	unsigned int tmo = RECV_TIMEOUT_US;
 	long long clen = -1, got = 0;
 	SceUID out = -1;
 	struct sockaddr_in sa;
@@ -152,6 +155,7 @@ int http_get(const char *url, const char *out_path, SceKernelUtilsSha1Context *s
 	snprintf(req, sizeof(req),
 	         "GET %s HTTP/1.0\r\nHost: %s\r\nUser-Agent: PSP-Homebrew-Store\r\nConnection: close\r\n\r\n",
 	         path, host);
+	sceNetInetSetsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &tmo, sizeof(tmo));
 	if ((int)sceNetInetSend(s, req, strlen(req), 0) != (int)strlen(req)) {
 		snprintf(err, errlen, "Couldn't send the request.");
 		goto done;
@@ -161,15 +165,28 @@ int http_get(const char *url, const char *out_path, SceKernelUtilsSha1Context *s
 	for (;;) {
 		int n;
 		char *end;
-		if (wait_readable(s, 15000) <= 0) {
-			snprintf(err, errlen, "The relay didn't answer.");
+		n = recv_some(s, head + hlen, sizeof(head) - 1 - hlen, &e);
+		if (n == RECV_TIMEOUT) {
+			if (++idle > 30) {   /* ~15 s */
+				snprintf(err, errlen, "The relay didn't answer.");
+				goto done;
+			}
+			if (cb && cb(ctx, 0, -1)) {
+				snprintf(err, errlen, "Cancelled.");
+				rc = -2;
+				goto done;
+			}
+			continue;
+		}
+		if (n < 0) {
+			snprintf(err, errlen, "Network error (%d) while waiting for the relay.", e);
 			goto done;
 		}
-		n = (int)sceNetInetRecv(s, head + hlen, sizeof(head) - 1 - hlen, 0);
-		if (n <= 0) {
+		if (n == 0) {
 			snprintf(err, errlen, "The connection closed early.");
 			goto done;
 		}
+		idle = 0;
 		hlen += n;
 		head[hlen] = 0;
 		end = strstr(head, "\r\n\r\n");
@@ -252,24 +269,19 @@ int http_get(const char *url, const char *out_path, SceKernelUtilsSha1Context *s
 		}
 		if (clen >= 0 && got >= clen)
 			break;
-		n = wait_readable(s, 200);
-		if (n < 0) {
-			snprintf(err, errlen, "Network error.");
-			goto done;
-		}
-		if (n == 0) {
-			if (++idle > 100) {   /* ~20 s with no data */
+		n = recv_some(s, buf, sizeof(buf), &e);
+		if (n == RECV_TIMEOUT) {
+			if (++idle > 40) {   /* ~20 s with no data */
 				snprintf(err, errlen, "The download stalled.");
 				goto done;
 			}
 			continue;
 		}
-		idle = 0;
-		n = (int)sceNetInetRecv(s, buf, sizeof(buf), 0);
 		if (n < 0) {
-			snprintf(err, errlen, "Network error.");
+			snprintf(err, errlen, "Network error (%d).", e);
 			goto done;
 		}
+		idle = 0;
 		if (n == 0)
 			break;
 		hlen = n;
