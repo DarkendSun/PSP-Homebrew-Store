@@ -119,6 +119,62 @@ int hb_rmtree(const char *path)
 	return sceIoRmdir(path) < 0 ? -1 : 0;
 }
 
+static int copy_file(const char *src, const char *dst)
+{
+	static unsigned char buf[65536];
+	SceUID in = sceIoOpen(src, PSP_O_RDONLY, 0), out;
+	int n, rc = 0;
+	if (in < 0)
+		return -1;
+	out = sceIoOpen(dst, PSP_O_WRONLY | PSP_O_CREAT | PSP_O_TRUNC, 0777);
+	if (out < 0) {
+		sceIoClose(in);
+		return -1;
+	}
+	while ((n = sceIoRead(in, buf, sizeof(buf))) > 0)
+		if (sceIoWrite(out, buf, n) != n) {
+			rc = -1;
+			break;
+		}
+	if (n < 0)
+		rc = -1;
+	sceIoClose(in);
+	sceIoClose(out);
+	return rc;
+}
+
+/* copy a folder tree (used when sceIoRename can't move a folder between directories) */
+int hb_copytree(const char *src, const char *dst)
+{
+	SceIoDirent ent;
+	SceUID d;
+	char a[HB_PATH], b[HB_PATH];
+	int rc = 0;
+	if (hb_mkdirs(dst) < 0)
+		return -1;
+	d = sceIoDopen(src);
+	if (d < 0)
+		return -1;
+	for (;;) {
+		memset(&ent, 0, sizeof(ent));
+		if (sceIoDread(d, &ent) <= 0)
+			break;
+		if (!strcmp(ent.d_name, ".") || !strcmp(ent.d_name, ".."))
+			continue;
+		if (snprintf(a, sizeof(a), "%s/%s", src, ent.d_name) >= (int)sizeof(a) ||
+		    snprintf(b, sizeof(b), "%s/%s", dst, ent.d_name) >= (int)sizeof(b)) {
+			rc = -1;
+			break;
+		}
+		if ((FIO_S_ISDIR(ent.d_stat.st_mode) ? hb_copytree(a, b) : copy_file(a, b)) < 0) {
+			rc = -1;
+			break;
+		}
+	}
+	sceIoDclose(d);
+	return rc;
+}
+
 typedef struct {
 	unsigned long maxClusters, freeClusters;
 	int unk1;

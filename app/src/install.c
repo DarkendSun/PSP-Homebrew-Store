@@ -91,9 +91,14 @@ int inst_install(const hb_entry *e, const char *zip_path, hb_progress cb, void *
 		if (hb_exists(target))
 			hb_rmtree(target);   /* an older copy we installed ourselves */
 		if (sceIoRename(stage, target) < 0) {
+			/* the PSP can't move a folder to another directory, so copy it instead */
+			if (hb_copytree(stage, target) < 0) {
+				hb_rmtree(target);
+				hb_rmtree(stage);
+				snprintf(err, errlen, "Couldn't copy the app into PSP/GAME/%s (is the memory stick full?).", a->name);
+				return -1;
+			}
 			hb_rmtree(stage);
-			snprintf(err, errlen, "Couldn't move the app into PSP/GAME/%s.", a->name);
-			return -1;
 		}
 	}
 	return 0;

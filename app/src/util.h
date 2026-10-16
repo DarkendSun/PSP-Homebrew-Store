@@ -14,6 +14,7 @@ int hb_exists(const char *path);
 int hb_is_dir(const char *path);
 int hb_mkdirs(const char *dir);
 int hb_rmtree(const char *path);
+int hb_copytree(const char *src, const char *dst);
 long long hb_free_space(void);
 int hb_read_file(const char *path, unsigned char **buf, int *len, int maxlen);
 int hb_write_file(const char *path, const void *buf, int len);
