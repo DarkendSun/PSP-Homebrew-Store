@@ -9,10 +9,9 @@ through a small **relay** (a Cloudflare Worker), checks each download, and insta
 > These are third-party homebrew files, made by many different people. You use them at your own risk.
 > The store never touches `PSP/GAME/UPDATE`, and it only deletes folders it installed itself.
 
-**Status: a first working shell.** The catalogue generator, signing and relay are tested on Windows. The PSP
-app has every screen and step written, but it hasn't been compiled or run yet: there's no PSP toolchain on
-this PC. The GitHub Actions workflow builds it, and then it needs a run in PPSSPP and on a real PSP (see
-"What's left").
+**Status: tested in the PPSSPP emulator, not yet on a real PSP.** GitHub Actions builds the app, and every
+build of `main` is published as the [nightly prerelease](https://github.com/DarkendSun/PSP-Homebrew-Store/releases/tag/nightly)
+(`EBOOT.PBP`, a ready `HBSTORE.zip`, and `SHA256SUMS.txt`). See "Tested" below for what has been checked.
 
 ```
 app/        PSP app (C, pspdev): EBOOT.PBP
@@ -125,8 +124,11 @@ HSTS doesn't matter, since the PSP ignores it. The workers.dev address needs non
 ### Build
 
 - **GitHub Actions** (`.github/workflows/build.yml`) builds `EBOOT.PBP` in the `pspdev/pspdev` Docker image
-  on every push, and uploads it as the `hbstore-EBOOT` artifact. Set the repository variable `RELAY_URL` to
-  your relay address so it's built in.
+  on every push.
+  - Compiler errors and warnings appear as annotations on the run page, which anyone can see without
+    signing in.
+  - Every build of `main` replaces the files on the public **nightly** prerelease.
+  - Set the repository variable `RELAY_URL` to your relay address so it's built in.
 - **Locally** you need Docker Desktop (not installed on this PC):
 
   ```
@@ -137,9 +139,10 @@ HSTS doesn't matter, since the PSP ignores it. The workers.dev address needs non
 
 ### Install on a PSP
 
-Make a folder named `HBSTORE` with the `EBOOT.PBP` in it. In the PSP CFW Helper, tick **Skip
-Infinity/CFW**, add that folder under **Extra apps**, then click Preview and **Back up and copy**. On the PSP
-it's under **Game > Memory Stick > PSP Homebrew Store**. CFW (PRO) must be loaded.
+Download `HBSTORE.zip` from the nightly release and extract it: it holds the `HBSTORE` folder. In the PSP
+CFW Helper, tick **Skip Infinity/CFW**, add that folder under **Extra apps**, then click Preview and **Back up
+and copy**. On the PSP it's under **Game > Memory Stick > PSP Homebrew Store**. CFW (PRO) must be loaded.
+The first install has to come from a PC; after that, the store updates itself.
 
 The relay address is built in. You can change it under **SELECT > Settings** (using the PSP's keyboard),
 or in `PSP/GAME/HBSTORE/config.txt`:
@@ -170,18 +173,57 @@ relay=http://psp-homebrew-relay.<you>.workers.dev
 
 The signed catalogue carries the app's latest version, and the size and SHA-512 of `relay/public/app/EBOOT.PBP`.
 After fetching the catalogue, the app says **"Update available"** and asks before downloading. It checks the
-hash, replaces its own `EBOOT.PBP`, and asks you to restart. To release a new version:
+SHA-512, then replaces its own `EBOOT.PBP`:
+
+1. It first moves the old file aside, so there's never a moment with no EBOOT.
+2. If the running file can't be replaced, it restarts into the checked new build, run from
+   `PSP/HBSTORE_TMP/UPD/`, which finishes the swap and starts the updated store.
+3. If even that fails, the checked new build is left as `EBOOT.new` and the app says to copy it over with a PC.
+
+To release a new version:
 
 1. Bump `APP_VERSION` in `app/src/version.h`.
 2. Build, and copy the new `EBOOT.PBP` to `relay/public/app/EBOOT.PBP`.
 3. Run `py -3 generator/hbgen.py build`, then deploy the relay.
 
-## What's left / untested
+## Tested (PPSSPP 1.20.4, driven through its WebSocket debugger)
 
-- **The PSP app hasn't been compiled or run yet.** It was written against the real pspsdk headers but never
-  compiled. Expect a round of fixes from the first CI build. Then test it in PPSSPP (installed on this PC
-  through scoop) and on a real PSP.
-- **PPSSPP:** its Wi-Fi emulation varies by version, so the download path is best tested on a real PSP.
+**Works:**
+
+- Starting the app.
+- Sony's Wi-Fi dialog.
+- Fetching the catalogue over plain HTTP from the relay, with its signature checked.
+- The list, details (source, author, license, link), installed-only filter and settings screens.
+- Downloading through the relay, with a progress bar and Cancel.
+- Archive.org and GitHub installs, byte-identical to the zip, with the `HBSTORE.ID` marker.
+- Uninstall.
+- The installed app (15 Puzzle) booting and loading its files.
+- The update offer, its download and its SHA-512 check.
+- Starting the handoff copy.
+
+**Refused, as they should be:**
+
+- A tampered catalogue.
+- A download whose SHA-1 doesn't match.
+- Files the relay doesn't list.
+
+**Bugs found and fixed:**
+
+- `poll()` returned immediately.
+- `recv()` didn't wait.
+- Folders couldn't be moved between directories.
+- Line breaks in messages.
+- The temp folder wasn't cleaned up.
+
+**Not testable in PPSSPP:** the final step of the self-update. PPSSPP keeps the EBOOT it started from locked
+for the whole session, so it can never be replaced there. A real PSP doesn't do this. If it fails anyway, the
+app keeps the checked build as `EBOOT.new` and says so.
+
+## What's left
+
+- **A real PSP:** Wi-Fi, speed and the self-update's last step on hardware.
+- **The full catalogue:** the test catalogue covers only part of the library. Run the full generator build
+  (hours the first time), with `GITHUB_TOKEN` set for the GitHub part.
 - **Icons:** the list shows a coloured G/A type tag. Real `ICON0.PNG` icons would need the generator to
   extract them and the relay to serve them, plus a PNG decoder in the app.
 - **Zips only:** entries that only exist as `.7z` aren't in the catalogue. 7z on the PSP is a possible later
@@ -203,18 +245,7 @@ hash, replaces its own `EBOOT.PBP`, and asks you to restart. To release a new ve
 
 No license is chosen yet. That's the owner's decision.
 
-## Putting it on GitHub (private)
+## GitHub
 
-`gh` isn't installed, so this is done on the website:
-
-1. Go to <https://github.com/new>. Set the owner to DarkendSun, the name to `psp-homebrew-store`, and choose
-   **Private**. Don't add a README, license or .gitignore.
-2. Then:
-
-   ```
-   cd "%USERPROFILE%\Desktop\PSP Homebrew Store"
-   git remote add origin https://github.com/DarkendSun/psp-homebrew-store.git
-   git push -u origin main
-   ```
-
-3. In the repo settings, add the Actions variable `RELAY_URL`. The **Actions** tab then has the built `EBOOT.PBP`.
+The repo is <https://github.com/DarkendSun/PSP-Homebrew-Store> (public). Set the Actions variable `RELAY_URL`
+(Settings > Secrets and variables > Actions > Variables) so the builds have your relay address built in.
