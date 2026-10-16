@@ -5,7 +5,9 @@
   py -3 generator/hbgen.py verify            check relay/public/catalogue.txt against its signature
 
 Source: the "PlayStation Portable Library: Homebrews" collection (archive.org/details/psp-homebrew-library).
-Only entries with a .zip that holds an EBOOT.PBP app are kept (the PSP app can unzip, not un-7z), and
+A second source is GitHub releases of open-source PSP homebrew (see github_source.py); duplicates of
+archive.org entries are dropped in favour of the GitHub release. Only entries with a .zip that holds an
+EBOOT.PBP app are kept (the PSP app can unzip, not un-7z), and
 anything listed in the not-working-psp item is dropped. Requests go only to archive.org, one at a time with a
 delay, and every answer is cached under generator/cache/ so later runs only ask about new entries.
 The archive.org request code follows the PSP CFW Helper's catalogue code.
@@ -29,12 +31,14 @@ from pathlib import Path, PurePosixPath
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import ed25519  # noqa: E402
+import github_source  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 CACHE = ROOT / "generator" / "cache"
 OUT_TXT = ROOT / "relay" / "public" / "catalogue.txt"
 OUT_SIG = ROOT / "relay" / "public" / "catalogue.sig"
 OUT_JSON = ROOT / "generator" / "out" / "catalogue.json"
+GH_REPOS = ROOT / "generator" / "github_repos.txt"
 APP_EBOOT = ROOT / "relay" / "public" / "app" / "EBOOT.PBP"
 VERSION_H = ROOT / "app" / "src" / "version.h"
 PUBKEY_H = ROOT / "app" / "src" / "pubkey.h"
@@ -44,7 +48,7 @@ KEY_FILE = KEY_DIR / "signing.key"
 COLLECTION = "psp-homebrew-library"
 NOT_WORKING = "not-working-psp"
 UA = "PSP-Homebrew-Store-generator/1.0 (personal catalogue builder; Python urllib)"
-FORMAT = "PSPHBS\t1"
+FORMAT = "PSPHBS\t2"
 RESERVED = {"update", "hbstore"}
 
 
@@ -272,10 +276,29 @@ def cmd_build(args):
             "id": item_id, "title": title, "kind": kind_of(r.get("subject")),
             "date": first(r.get("date"))[:10] or "-", "file": f["name"], "size": int(f.get("size") or 0),
             "sha1": f["sha1"].lower(), "apps": apps, "description": ascii_text(r.get("description"), 300),
-            "creator": ascii_text(r.get("creator"), 60),
+            "source": "archive.org", "author": ascii_text(r.get("creator"), 40) or "-", "license": "-",
+            "link": f"https://archive.org/details/{item_id}",
         })
         if i % 25 == 0:
             print(f"  {i}/{len(rows)} checked, {len(entries)} kept")
+
+    counts = {"archive.org": len(entries), "GitHub": 0, "duplicates dropped": 0}
+    if not args.no_github:
+        print("Checking GitHub releases...")
+        gh, gh_skipped = github_source.entries(CACHE / "github", args.github_delay, GH_REPOS, apps_in, ascii_text)
+        keys = set()
+        for e in gh:
+            keys.add(stem_key(e["title"]))
+            keys |= {stem_key(name) for _, name in e["apps"]}
+        keys.discard("")
+        before = len(entries)
+        entries = [e for e in entries
+                   if stem_key(e["title"]) not in keys and not any(stem_key(n) in keys for _, n in e["apps"])]
+        counts["duplicates dropped"] = before - len(entries)
+        counts["archive.org"] = len(entries)
+        counts["GitHub"] = len(gh)
+        entries += gh
+        print(f"  GitHub skipped: {gh_skipped}")
 
     version = args.app_version or app_version()
     app_size, app_sha = "-", "-"
@@ -290,7 +313,8 @@ def cmd_build(args):
             if "\t" in field or "\n" in field:
                 raise ValueError(f"tab or newline in {field!r}")
         lines.append("\t".join(["E", e["id"], e["title"], e["kind"], e["date"], e["file"], str(e["size"]),
-                                e["sha1"], apps, e["description"] or "-"]))
+                                e["sha1"], apps, e["description"] or "-", e["source"], e["author"] or "-",
+                                e["license"] or "-", e["link"]]))
     body = ("\n".join(lines) + "\n").encode("utf-8")
     OUT_TXT.parent.mkdir(parents=True, exist_ok=True)
     OUT_TXT.write_bytes(body)
@@ -298,7 +322,8 @@ def cmd_build(args):
     OUT_JSON.parent.mkdir(parents=True, exist_ok=True)
     OUT_JSON.write_text(json.dumps({"generated": stamp, "app_version": version, "entries": entries}, indent=1),
                         encoding="utf-8")
-    print(f"Kept {len(entries)} of {len(rows)} entries. Skipped: {skipped}")
+    print(f"archive.org: kept {counts['archive.org']} of {len(rows)} checked (skipped: {skipped})")
+    print(f"Entries by source: {counts}")
     print(f"Wrote {OUT_TXT.relative_to(ROOT)} ({len(body)} bytes) and its signature; app version {version}"
           + ("" if app_sha != "-" else " (no relay/public/app/EBOOT.PBP yet, so no app update offered)"))
 
@@ -318,6 +343,8 @@ def main():
     b.add_argument("--limit", type=int, help="only check the first N entries (for testing)")
     b.add_argument("--only", help="comma-separated archive.org ids to check")
     b.add_argument("--delay", type=float, default=1.0, help="seconds between archive.org requests (default 1)")
+    b.add_argument("--no-github", action="store_true", help="skip the GitHub releases source")
+    b.add_argument("--github-delay", type=float, default=1.0, help="seconds between GitHub API calls")
     b.add_argument("--app-version", help="app version to advertise (default: app/src/version.h)")
     v = sub.add_parser("verify")
     v.add_argument("--pubkey", help="hex public key to check against (default: from the private key)")

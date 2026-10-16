@@ -1,0 +1,3 @@
+# Extra GitHub repos to check (owner/name), one per line. They're only listed if GitHub reports an
+# open-source license and the latest release has a .zip with an EBOOT.PBP app.
+joel16/CMFileManager-PSP

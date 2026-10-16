@@ -71,7 +71,7 @@ static int parse_apps(hb_entry *e, char *s)
 
 int cat_load(hb_catalogue *c, const unsigned char *txt, int len, const char *sighex, char *err, int errlen)
 {
-	char *line, *next, *f[12];
+	char *line, *next, *f[16];
 	int lines = 0, n;
 
 	memset(c, 0, sizeof(*c));
@@ -100,7 +100,7 @@ int cat_load(hb_catalogue *c, const unsigned char *txt, int len, const char *sig
 	next = strchr(line, '\n');
 	if (!next) goto bad;
 	*next = 0;
-	if (split(line, f, 12) < 6 || strcmp(f[0], "PSPHBS") || strcmp(f[1], "1"))
+	if (split(line, f, 16) < 6 || strcmp(f[0], "PSPHBS") || strcmp(f[1], "2"))
 		goto bad;
 	c->generated = f[2];
 	c->app_version = f[3];
@@ -112,7 +112,7 @@ int cat_load(hb_catalogue *c, const unsigned char *txt, int len, const char *sig
 		next = strchr(line, '\n');
 		if (!next) goto bad;
 		*next = 0;
-		if (split(line, f, 12) != 10 || strcmp(f[0], "E"))
+		if (split(line, f, 16) != 14 || strcmp(f[0], "E"))
 			continue;   /* unknown line types are skipped, for newer catalogue versions */
 		e = &c->entries[c->count];
 		e->id = f[1];
@@ -123,6 +123,10 @@ int cat_load(hb_catalogue *c, const unsigned char *txt, int len, const char *sig
 		e->size = atoll(f[6]);
 		e->sha1 = f[7];
 		e->desc = f[9];
+		e->source = f[10];
+		e->author = f[11];
+		e->license = f[12];
+		e->link = f[13];
 		if (strlen(e->sha1) != 40 || parse_apps(e, f[8]) < 0)
 			continue;
 		c->count++;

@@ -22,12 +22,13 @@ relay/      Cloudflare Worker: serves the signed catalogue and passes through li
 
 ## How it fits together
 
-1. **Generator** (your PC): lists the archive.org collection. It keeps entries whose `.zip` contains an
-   `EBOOT.PBP` app, drops anything in the `not-working-psp` item, and writes `relay/public/catalogue.txt`,
-   signed with your ed25519 key (`catalogue.sig`).
+1. **Generator** (your PC): lists the archive.org collection and GitHub releases of open-source PSP
+   homebrew. It keeps entries whose `.zip` contains an `EBOOT.PBP` app, drops anything in the
+   `not-working-psp` item, and writes `relay/public/catalogue.txt`, signed with your ed25519 key
+   (`catalogue.sig`).
 2. **Relay** (Cloudflare): the PSP can't do modern HTTPS, so it talks **plain HTTP** to the relay. The relay
-   serves the catalogue, and fetches from `https://archive.org` only files that are **listed in the
-   catalogue**. It isn't an open proxy: anything else gets a 404.
+   serves the catalogue, and fetches from `https://archive.org` or GitHub only files that are **listed in
+   the catalogue**. It isn't an open proxy: anything else gets a 404.
 3. **App** (PSP): it accepts a catalogue only if its signature matches the public key built into the app.
    It checks every download's SHA-1 against the catalogue before unpacking, and its own updates against a
    SHA-512.
@@ -49,9 +50,23 @@ py -3 generator/hbgen.py verify
   40 entries kept 37.
 - **Only `.zip` versions are used**, because the app unpacks zip but not 7z. If an entry has several zips, it
   prefers the newest-looking one (not under "Old versions").
+- **GitHub releases** (`generator/github_source.py`): candidates come from the
+  [PSP-Archive](https://github.com/PSP-Archive) organisation, the `psp-homebrew` topic and
+  `generator/github_repos.txt`. A repo is listed only if:
+  - GitHub reports an open-source license (MIT, BSD, GPL, LGPL, Apache, MPL, Unlicense and so on).
+  - It isn't CFW, flasher or firmware tooling.
+  - Its latest release has a `.zip` asset with an `EBOOT.PBP` app. The generator downloads the zip once to
+    look inside and to take its SHA-1.
+
+  The source, author, license and repo link are recorded, and shown on the app's details screen. If a GitHub
+  app is also in the archive.org library, the GitHub release is kept and the archive.org copy dropped. API
+  answers are cached for a day. Unauthenticated GitHub allows 60 API calls an hour; for more, set
+  `GITHUB_TOKEN` in your shell for that run (read-only, never put it in a file in the repo). Add
+  `--no-github` to skip this source.
 - **Catalogue format** (`catalogue.txt`, UTF-8, ASCII text fields):
-  `PSPHBS 1 <generated> <app version> <app size> <app sha512>` on the first line, then one line per entry:
-  `E <id> <title> <kind> <date> <zip file> <size> <sha1> <prefix>NAME|... <description>`, tab-separated.
+  `PSPHBS 2 <generated> <app version> <app size> <app sha512>` on the first line, then one line per entry:
+  `E <id> <title> <kind> <date> <zip file> <size> <sha1> <prefix>NAME|... <description> <source> <author>
+  <license> <link>`, tab-separated. GitHub entries have ids `gh:<owner>/<repo>` and files `<tag>/<asset>`.
   The signature covers the exact bytes.
 
 ## 2. Relay (a new, separate Cloudflare Worker)
@@ -60,8 +75,12 @@ py -3 generator/hbgen.py verify
 account.
 
 - `GET /catalogue.txt`, `/catalogue.sig`, `/app/EBOOT.PBP`: published files from `relay/public/`.
-- `GET /dl/<id>/<file>`: streams `https://archive.org/download/<id>/<file>`, only when that pair is in the
-  catalogue. It refuses redirects away from archive.org and retries once if archive.org has a hiccup.
+- `GET /dl/<id>/<file>`: streams `https://archive.org/download/<id>/<file>`, or for `gh:` entries
+  `https://github.com/<owner>/<repo>/releases/download/<tag>/<asset>`, only when that pair is in the
+  catalogue.
+  - Redirects are followed only within archive.org, or within github.com, `objects.githubusercontent.com`
+    and `release-assets.githubusercontent.com`.
+  - It retries once if the source has a hiccup.
 - **Rate limit:** 60 requests a minute per IP, using Cloudflare's rate-limit binding.
 - **No login or token:** anyone with the address can read the catalogue and fetch the listed files. The
   allow-list and the rate limit stop it being used for anything else.
@@ -175,6 +194,8 @@ hash, replaces its own `EBOOT.PBP`, and asks you to restart. To release a new ve
   domain, from <https://tweetnacl.cr.yp.to> (`app/src/tweetnacl.c`, `tweetnacl.h`, unchanged).
 - **Ed25519 reference code** from RFC 8032, section 6 (`generator/ed25519.py`, adapted).
 - **pspdev / PSPSDK** toolchain and libraries, and **zlib** by Jean-loup Gailly and Mark Adler.
+- **GitHub homebrew authors**: each GitHub entry's author, license and repository are listed in the
+  catalogue and shown in the app.
 - **The Internet Archive** and the **PSP-Archive** preservation community
   (<https://github.com/PSP-Archive>) for the homebrew library. Their repositories were read for reference
   only; no code was copied from them.

@@ -10,6 +10,7 @@ typedef struct {
 
 typedef struct {
 	char *id, *title, *kind, *date, *file, *sha1, *desc;
+	char *source, *author, *license, *link;   /* where it comes from, shown on the details screen */
 	long long size;
 	int napps;
 	hb_app apps[HB_MAX_APPS];

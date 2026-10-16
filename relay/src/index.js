@@ -1,8 +1,8 @@
 // PSP Homebrew Store relay: a small, separate Cloudflare Worker for a few friends' PSPs.
 //
 // It serves the signed catalogue (catalogue.txt + catalogue.sig), the store app's own update
-// (app/EBOOT.PBP), and plain-HTTP passthrough downloads of files from archive.org, but ONLY files
-// listed in the signed catalogue. It is not an open proxy. The PSP can't do modern TLS, so it
+// (app/EBOOT.PBP), and plain-HTTP passthrough downloads of files from archive.org and GitHub release
+// assets, but ONLY files listed in the signed catalogue. It is not an open proxy. The PSP can't do modern TLS, so it
 // talks plain HTTP to this Worker and the Worker fetches archive.org over HTTPS.
 //
 // Rate limit: the RATE_LIMITER binding (per client IP), with a per-isolate fallback.
@@ -50,6 +50,25 @@ function isArchiveOrg(url) {
   return u.protocol === "https:" && (u.hostname === "archive.org" || u.hostname.endsWith(".archive.org"));
 }
 
+// GitHub release assets redirect from github.com to one of these
+const GITHUB_HOSTS = new Set(["github.com", "objects.githubusercontent.com", "release-assets.githubusercontent.com"]);
+function isGitHub(url) {
+  const u = new URL(url);
+  return u.protocol === "https:" && GITHUB_HOSTS.has(u.hostname);
+}
+
+function upstreamFor(id, file) {
+  const enc = (p) => p.split("/").map(encodeURIComponent).join("/");
+  if (id.startsWith("gh:")) {
+    // id gh:<owner>/<repo>, file <tag>/<asset name>
+    const repo = id.slice(3);
+    const slash = file.indexOf("/");
+    if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo) || slash < 1) return null;
+    return { url: `https://github.com/${repo}/releases/download/${encodeURIComponent(file.slice(0, slash))}/${encodeURIComponent(file.slice(slash + 1))}`, ok: isGitHub };
+  }
+  return { url: `https://archive.org/download/${encodeURIComponent(id)}/${enc(file)}`, ok: isArchiveOrg };
+}
+
 async function passthrough(env, request, path) {
   // /dl/<id>/<file path inside the item>, each part URL-encoded by the app
   const parts = path.slice("/dl/".length).split("/");
@@ -64,7 +83,9 @@ async function passthrough(env, request, path) {
   const entry = (await listedFiles(env, request)).get(`${id}\n${file}`);
   if (!entry) return text(404, "not in the catalogue");
 
-  const upstream = `https://archive.org/download/${encodeURIComponent(id)}/${file.split("/").map(encodeURIComponent).join("/")}`;
+  const up = upstreamFor(id, file);
+  if (!up) return text(404, "not in the catalogue");
+  const upstream = up.url;
   const get = () => fetch(upstream, {
     method: request.method,
     headers: { "user-agent": "PSP-Homebrew-Store-relay/1.0 (personal, few users)" },
@@ -77,9 +98,9 @@ async function passthrough(env, request, path) {
     await new Promise((r) => setTimeout(r, 1500));
     res = await get();
   }
-  if (!isArchiveOrg(res.url)) return text(502, "upstream redirected away from archive.org");
-  if (res.status === 429 || res.status === 503) return text(503, "archive.org is busy, try again in a minute", { "retry-after": "60" });
-  if (!res.ok) return text(502, `archive.org answered ${res.status}`);
+  if (!up.ok(res.url)) return text(502, "upstream redirected somewhere it shouldn't");
+  if (res.status === 429 || res.status === 503) return text(503, "the source is busy, try again in a minute", { "retry-after": "60" });
+  if (!res.ok) return text(502, `the source answered ${res.status}`);
   const headers = new Headers({
     "content-type": "application/octet-stream",
     "cache-control": "public, max-age=86400, no-transform",

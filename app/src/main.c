@@ -365,7 +365,9 @@ static void details(hb_entry *e)
 		y = 5 + ui_wrap(1, 5, UI_COLS - 2, 14, C_TEXT, strcmp(e->desc, "-") ? e->desc : "(no description)");
 		for (i = 0; i < e->napps; i++)
 			ui_at(1, y + 1 + i, C_DIM, "Installs to PSP/GAME/%s", e->apps[i].name);
-		ui_at(1, UI_ROWS - 4, C_DIM, "archive.org: %s", e->id);
+		ui_at(1, UI_ROWS - 6, C_DIM, "From: %s   by %s   license: %s", e->source, e->author,
+		      strcmp(e->license, "-") ? e->license : "not stated");
+		ui_wrap(1, UI_ROWS - 5, UI_COLS - 2, 2, C_DIM, e->link);
 		ui_footer(inst ? "X reinstall   [] uninstall   O back" : "X download + install   O back");
 		ui_end();
 		b = ui_pressed();
