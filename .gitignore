@@ -1,0 +1,27 @@
+# never commit keys or secrets
+*.key
+.psp-hbstore/
+.dev.vars
+.env
+
+# build output
+app/*.o
+app/src/*.o
+app/*.elf
+app/*.prx
+app/PARAM.SFO
+app/EBOOT.PBP
+
+# generator caches and output
+generator/cache/
+generator/out/
+__pycache__/
+
+# generated and published by the owner, not kept in git
+relay/public/catalogue.txt
+relay/public/catalogue.sig
+relay/public/app/
+
+# relay tooling
+relay/node_modules/
+relay/.wrangler/

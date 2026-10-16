@@ -1,0 +1,21 @@
+// PSP Homebrew Store relay: its own Worker, separate from anything else on the account.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "psp-homebrew-relay",
+  "main": "src/index.js",
+  "compatibility_date": "2025-09-01",
+  // Served at https:// AND plain http://<name>.<account>.workers.dev (workers.dev doesn't force HTTPS).
+  "workers_dev": true,
+  "preview_urls": false,
+  "assets": {
+    "directory": "public",
+    "binding": "ASSETS",
+    "run_worker_first": true
+  },
+  // Per-IP limit: 60 requests a minute. Downloads stream, so each one is a single request.
+  "ratelimits": [
+    { "name": "RATE_LIMITER", "namespace_id": "4271", "simple": { "limit": 60, "period": 60 } }
+  ],
+  "observability": { "enabled": false }
+  // Optional friends token: npx wrangler secret put FRIENDS_TOKEN
+}

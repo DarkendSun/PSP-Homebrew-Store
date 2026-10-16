@@ -1,0 +1,23 @@
+name: Build EBOOT
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: pspdev/pspdev:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        working-directory: app
+        # Set the repository variable RELAY_URL (Settings > Secrets and variables > Actions > Variables)
+        run: make RELAY="${{ vars.RELAY_URL || 'http://psp-homebrew-relay.YOUR-SUBDOMAIN.workers.dev' }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hbstore-EBOOT
+          path: |
+            app/EBOOT.PBP
+            app/hbstore.prx
