@@ -178,8 +178,22 @@ static int swap_in(const char *src, const char *dst)
 	char old[HB_PATH];
 	snprintf(old, sizeof(old), "%s.old", dst);
 	sceIoRemove(old);
-	if (sceIoRename(dst, old) < 0)
-		return -1;
+	if (sceIoRename(dst, old) < 0) {
+		/* dst is in use and can't be renamed (PPSSPP keeps the booted EBOOT open): overwrite it in place,
+		 * read it back to be sure, and only then drop src (the checked copy) */
+		unsigned char *a = NULL, *b = NULL;
+		int al = 0, bl = 0, same;
+		if (hb_read_file(src, &a, &al, 16 * 1024 * 1024) < 0)
+			return -1;
+		same = hb_write_file(dst, a, al) == 0 && hb_read_file(dst, &b, &bl, 16 * 1024 * 1024) == 0 &&
+		       bl == al && !memcmp(a, b, al);
+		free(a);
+		free(b);
+		if (!same)
+			return -1;
+		sceIoRemove(src);
+		return 0;
+	}
 	if (sceIoRename(src, dst) < 0) {
 		sceIoRename(old, dst);
 		return -1;
