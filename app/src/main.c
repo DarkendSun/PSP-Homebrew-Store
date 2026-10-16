@@ -4,6 +4,7 @@
 #include <pspkernel.h>
 #include <pspctrl.h>
 #include <psputils.h>
+#include <psploadexec.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -171,6 +172,68 @@ static int ensure_wifi(void)
 	return 1;
 }
 
+/* Replace dst with src (same folder) without ever leaving no dst: move dst aside first. 0 on success. */
+static int swap_in(const char *src, const char *dst)
+{
+	char old[HB_PATH];
+	snprintf(old, sizeof(old), "%s.old", dst);
+	sceIoRemove(old);
+	if (sceIoRename(dst, old) < 0)
+		return -1;
+	if (sceIoRename(src, dst) < 0) {
+		sceIoRename(old, dst);
+		return -1;
+	}
+	sceIoRemove(old);
+	return 0;
+}
+
+/* Running as the temporary copy that self_update() started: copy ourselves over the store's EBOOT.PBP,
+ * then start it. Returns only if this isn't such a run. */
+static void finish_update(const char *self)
+{
+	char dir[HB_PATH], tgtfile[HB_PATH], target[HB_PATH], fresh[HB_PATH], leftover[HB_PATH];
+	unsigned char *me = NULL, *t = NULL;
+	int len = 0, tl = 0, ok = 0;
+	SceKernelLoadExecParam param;
+
+	inst_tmp_dir(dir, sizeof(dir));
+	strcat(dir, "/UPD/");
+	if (!self || strncasecmp(self, dir, strlen(dir)))
+		return;
+	ui_init();
+	ui_begin();
+	ui_header(APP_NAME, NULL);
+	ui_at(2, 6, C_TEXT, "Finishing the update...");
+	ui_end();
+	snprintf(tgtfile, sizeof(tgtfile), "%starget.txt", dir);
+	if (hb_read_file(tgtfile, &t, &tl, HB_PATH - 1) == 0 && hb_read_file(self, &me, &len, 16 * 1024 * 1024) == 0) {
+		memcpy(target, t, tl);
+		target[tl] = 0;
+		snprintf(fresh, sizeof(fresh), "%s.new", target);
+		/* the target must be an EBOOT.PBP in PSP/GAME */
+		if (strstr(target, "/PSP/GAME/") && strlen(target) > 10 && !strcasecmp(target + strlen(target) - 10, "/EBOOT.PBP") &&
+		    !strstr(target, "/UPDATE/") && hb_write_file(fresh, me, len) == 0 && swap_in(fresh, target) == 0)
+			ok = 1;
+	}
+	free(me);
+	free(t);
+	if (ok) {
+		/* clean up: the EBOOT.new from the first attempt */
+		snprintf(leftover, sizeof(leftover), "%s", target);
+		strcpy(leftover + strlen(leftover) - 3, "new");
+		sceIoRemove(leftover);
+		memset(&param, 0, sizeof(param));
+		param.size = sizeof(param);
+		param.args = strlen(target) + 1;
+		param.argp = target;
+		sceKernelLoadExec(target, &param);
+	}
+	ui_message("Update", ok ? "Updated. Start the store again from Game > Memory Stick." :
+	           "Couldn't finish the update. Start the store from Game > Memory Stick and try again.");
+	sceKernelExitGame();
+}
+
 static void self_update(void)
 {
 	char ask[200], url[256], err[200], path[HB_PATH], eboot[HB_PATH], hex[129];
@@ -201,14 +264,35 @@ static void self_update(void)
 		ui_message("Update", "Couldn't write to the memory stick.");
 		return;
 	}
-	free(buf);
-	sceIoRemove(eboot);
-	if (sceIoRename(path, eboot) < 0) {
-		ui_message("Update", "Couldn't replace EBOOT.PBP. The new version is saved as EBOOT.new in the app's folder.");
-		return;
+	if (swap_in(path, eboot) == 0) {
+		free(buf);
+		ui_message("Updated", "Installed. The store will now close; start it again from Game > Memory Stick.");
+		sceKernelExitGame();
 	}
-	ui_message("Updated", "Installed. The store will now close; start it again from Game > Memory Stick.");
-	sceKernelExitGame();
+	/* The running EBOOT can't be replaced while it's in use (PPSSPP locks it, some PSPs may too):
+	 * start the verified new build from a temporary folder and let it finish the job. */
+	{
+		char dir[HB_PATH], upd[HB_PATH], tgt[HB_PATH];
+		SceKernelLoadExecParam param;
+		inst_tmp_dir(dir, sizeof(dir));
+		strcat(dir, "/UPD");
+		hb_mkdirs(dir);
+		snprintf(upd, sizeof(upd), "%s/EBOOT.PBP", dir);
+		snprintf(tgt, sizeof(tgt), "%s/target.txt", dir);
+		if (hb_write_file(upd, buf, len) == 0 && hb_write_file(tgt, eboot, (int)strlen(eboot)) == 0) {
+			free(buf);
+			buf = NULL;
+			ui_message("Update", "The store will restart to finish the update.");
+			memset(&param, 0, sizeof(param));
+			param.size = sizeof(param);
+			param.args = strlen(upd) + 1;
+			param.argp = upd;
+			sceKernelLoadExec(upd, &param);
+		}
+	}
+	free(buf);
+	ui_message("Update", "Couldn't finish the update. The checked new version is saved as EBOOT.new in the "
+	           "app's folder: copy it over EBOOT.PBP with a PC.");
 }
 
 static void refresh(void)
@@ -452,9 +536,17 @@ int main(int argc, char *argv[])
 	if (th >= 0)
 		sceKernelStartThread(th, 0, 0);
 	hb_paths_init(argc > 0 ? argv[0] : NULL);
+	finish_update(argc > 0 ? argv[0] : NULL);
 	ui_init();
 	load_config();
 	load_cached();
+	{
+		char upd[HB_PATH];   /* a finished update leaves its temporary copy behind */
+		inst_tmp_dir(upd, sizeof(upd));
+		strcat(upd, "/UPD");
+		if (hb_exists(upd))
+			hb_rmtree(upd);
+	}
 	free_bytes = hb_free_space();
 	while (running)
 		list_screen();
