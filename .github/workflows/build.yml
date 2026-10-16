@@ -20,12 +20,14 @@ jobs:
           make -k RELAY="${{ vars.RELAY_URL || 'http://psp-homebrew-relay.YOUR-SUBDOMAIN.workers.dev' }}" > build.log 2>&1
           status=$?
           cat build.log
-          # compiler and linker errors as annotations, which show on the run page without signing in
-          grep -E "(error|undefined reference|No such file)" build.log | head -40 | while IFS= read -r line; do
+          # compiler errors and warnings as annotations, which show on the run page without signing in
+          grep -E "(error|warning:|undefined reference|No such file)" build.log | grep -v "tweetnacl" | head -40 | while IFS= read -r line; do
             f=$(echo "$line" | sed -n 's/^\([^:]*\.[ch]\):\([0-9]*\):.*/\1/p')
             l=$(echo "$line" | sed -n 's/^\([^:]*\.[ch]\):\([0-9]*\):.*/\2/p')
             msg=$(echo "$line" | sed 's/%/%25/g')
-            if [ -n "$f" ]; then echo "::error file=app/$f,line=$l::$msg"; else echo "::error::$msg"; fi
+            kind=error
+            echo "$line" | grep -q "warning:" && kind=warning
+            if [ -n "$f" ]; then echo "::$kind file=app/$f,line=$l::$msg"; else echo "::$kind::$msg"; fi
           done
           exit $status
       - uses: actions/upload-artifact@v4
@@ -34,3 +36,33 @@ jobs:
           path: |
             app/EBOOT.PBP
             app/hbstore.prx
+
+  # Every build of main is published as the public "nightly" prerelease (no sign-in needed to download).
+  publish:
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: hbstore-EBOOT
+          path: out
+      - name: Publish the nightly prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          cd out
+          mkdir -p HBSTORE && cp EBOOT.PBP HBSTORE/ && zip -r HBSTORE.zip HBSTORE
+          sha256sum EBOOT.PBP HBSTORE.zip > SHA256SUMS.txt
+          notes="Automatic build of ${GITHUB_SHA} (not yet tested on a real PSP).
+          HBSTORE.zip holds the HBSTORE folder for PSP/GAME/. See the README for how to install it."
+          if gh release view nightly -R "$REPO" > /dev/null 2>&1; then
+            gh api -X PATCH "repos/$REPO/git/refs/tags/nightly" -f sha="$GITHUB_SHA" -F force=true > /dev/null
+            gh release edit nightly -R "$REPO" --prerelease --notes "$notes"
+          else
+            gh release create nightly -R "$REPO" --prerelease --target "$GITHUB_SHA" --title "Nightly build" --notes "$notes"
+          fi
+          gh release upload nightly EBOOT.PBP HBSTORE.zip SHA256SUMS.txt -R "$REPO" --clobber
