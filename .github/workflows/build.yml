@@ -17,7 +17,7 @@ jobs:
         # Set the repository variable RELAY_URL (Settings > Secrets and variables > Actions > Variables)
         run: |
           set +e
-          make RELAY="${{ vars.RELAY_URL || 'http://psp-homebrew-relay.YOUR-SUBDOMAIN.workers.dev' }}" > build.log 2>&1
+          make -k RELAY="${{ vars.RELAY_URL || 'http://psp-homebrew-relay.YOUR-SUBDOMAIN.workers.dev' }}" > build.log 2>&1
           status=$?
           cat build.log
           # compiler and linker errors as annotations, which show on the run page without signing in

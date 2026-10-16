@@ -7,8 +7,8 @@
 
 static unsigned char inbuf[16384], outbuf[32768];
 
-static unsigned u16(const unsigned char *p) { return p[0] | p[1] << 8; }
-static unsigned u32(const unsigned char *p) { return p[0] | p[1] << 8 | p[2] << 16 | (unsigned)p[3] << 24; }
+static unsigned rd16(const unsigned char *p) { return p[0] | p[1] << 8; }
+static unsigned rd32(const unsigned char *p) { return p[0] | p[1] << 8 | p[2] << 16 | (unsigned)p[3] << 24; }
 
 static int fail(char *err, int errlen, const char *msg)
 {
@@ -98,7 +98,7 @@ int zip_extract(const char *zip_path, const char *prefix, const char *dest_dir,
 		goto out;
 	}
 	for (i = tlen - 22; i >= 0; i--)
-		if (u32(tail + i) == 0x06054b50) {
+		if (rd32(tail + i) == 0x06054b50) {
 			eocd = tail + i;
 			break;
 		}
@@ -106,9 +106,9 @@ int zip_extract(const char *zip_path, const char *prefix, const char *dest_dir,
 		fail(err, errlen, "That isn't a zip file.");
 		goto out;
 	}
-	entries = u16(eocd + 10);
-	cdsize = u32(eocd + 12);
-	cdoff = u32(eocd + 16);
+	entries = rd16(eocd + 10);
+	cdsize = rd32(eocd + 12);
+	cdoff = rd32(eocd + 16);
 	if (cdoff == 0xffffffff || (long)cdoff + (long)cdsize > size) {
 		fail(err, errlen, "Unsupported zip (zip64 or damaged).");
 		goto out;
@@ -126,19 +126,19 @@ int zip_extract(const char *zip_path, const char *prefix, const char *dest_dir,
 		FILE *out;
 		int r;
 
-		if (pos + 46 > cdsize || u32(cd + pos) != 0x02014b50) {
+		if (pos + 46 > cdsize || rd32(cd + pos) != 0x02014b50) {
 			fail(err, errlen, "The zip's directory is damaged.");
 			goto out;
 		}
-		flags = u16(cd + pos + 8);
-		method = u16(cd + pos + 10);
-		crc = u32(cd + pos + 16);
-		csize = u32(cd + pos + 20);
-		usize = u32(cd + pos + 24);
-		nlen = u16(cd + pos + 28);
-		elen = u16(cd + pos + 30);
-		clen = u16(cd + pos + 32);
-		lho = u32(cd + pos + 42);
+		flags = rd16(cd + pos + 8);
+		method = rd16(cd + pos + 10);
+		crc = rd32(cd + pos + 16);
+		csize = rd32(cd + pos + 20);
+		usize = rd32(cd + pos + 24);
+		nlen = rd16(cd + pos + 28);
+		elen = rd16(cd + pos + 30);
+		clen = rd16(cd + pos + 32);
+		lho = rd32(cd + pos + 42);
 		if (pos + 46 + nlen > cdsize || nlen >= sizeof(name)) {
 			fail(err, errlen, "The zip's directory is damaged.");
 			goto out;
@@ -182,8 +182,8 @@ int zip_extract(const char *zip_path, const char *prefix, const char *dest_dir,
 		}
 		*slash = '/';
 
-		if (fseek(f, lho, SEEK_SET) || fread(lh, 1, 30, f) != 30 || u32(lh) != 0x04034b50 ||
-		    fseek(f, lho + 30 + u16(lh + 26) + u16(lh + 28), SEEK_SET)) {
+		if (fseek(f, lho, SEEK_SET) || fread(lh, 1, 30, f) != 30 || rd32(lh) != 0x04034b50 ||
+		    fseek(f, lho + 30 + rd16(lh + 26) + rd16(lh + 28), SEEK_SET)) {
 			fail(err, errlen, "The zip is damaged.");
 			goto out;
 		}
