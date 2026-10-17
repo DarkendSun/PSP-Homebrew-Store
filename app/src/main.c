@@ -59,6 +59,15 @@ static void app_path(const char *name, char *out, int outlen)
 	snprintf(out, outlen, "%s/%s", hb_app_dir, name);
 }
 
+/* The PSP can't do modern HTTPS, so the relay is always reached over plain http:// */
+static void fix_relay(void)
+{
+	if (!strncasecmp(relay, "https://", 8))
+		memmove(relay + 4, relay + 5, strlen(relay + 5) + 1);   /* "https://" -> "http://" */
+	while (*relay && relay[strlen(relay) - 1] == '/')
+		relay[strlen(relay) - 1] = 0;
+}
+
 static void load_config(void)
 {
 	char path[HB_PATH], *line;
@@ -72,8 +81,6 @@ static void load_config(void)
 			snprintf(relay, sizeof(relay), "%s", line + 6);
 	}
 	free(buf);
-	while (*relay && relay[strlen(relay) - 1] == '/')
-		relay[strlen(relay) - 1] = 0;
 }
 
 static void save_config(void)
@@ -449,6 +456,7 @@ static void settings(void)
 			char v[160];
 			if (ui_osk("Relay address (http://...)", relay, v, sizeof(v))) {
 				snprintf(relay, sizeof(relay), "%s", v);
+				fix_relay();
 				save_config();
 			}
 		} else if ((b & PSP_CTRL_CIRCLE) || !running) {
@@ -553,6 +561,7 @@ int main(int argc, char *argv[])
 	finish_update(argc > 0 ? argv[0] : NULL);
 	ui_init();
 	load_config();
+	fix_relay();
 	load_cached();
 	{
 		char upd[HB_PATH];   /* a finished update leaves its temporary copy behind */
