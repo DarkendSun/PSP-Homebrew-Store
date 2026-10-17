@@ -144,6 +144,11 @@ CFW Helper, tick **Skip Infinity/CFW**, add that folder under **Extra apps**, th
 and copy**. On the PSP it's under **Game > Memory Stick > PSP Homebrew Store**. CFW (PRO) must be loaded.
 The first install has to come from a PC; after that, the store updates itself.
 
+**Straight from the PSP (being tested):** open the PSP's Internet Browser at
+`http://psp-homebrew-relay.<you>.workers.dev/`. The relay serves a plain install page with a link to
+`/EBOOT.PBP` (sent as a download, `EBOOT.PBP`). Save it to `/PSP/GAME/HBSTORE/` if the browser lets you
+choose that folder.
+
 The relay address is built in. You can change it under **SELECT > Settings** (using the PSP's keyboard),
 or in `PSP/GAME/HBSTORE/config.txt`:
 

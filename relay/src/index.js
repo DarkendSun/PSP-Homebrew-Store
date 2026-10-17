@@ -110,6 +110,31 @@ async function passthrough(env, request, path) {
   return new Response(res.body, { status: 200, headers });
 }
 
+// A plain page the PSP's Internet Browser (NetFront, no modern HTML) can show: how to save the store app.
+async function installPage(env, request) {
+  const res = await env.ASSETS.fetch(new Request(new URL("/app/EBOOT.PBP", request.url)));
+  const size = res.ok ? (await res.arrayBuffer()).byteLength : 0;
+  const kb = size ? ` (${Math.round(size / 1024)} KB)` : "";
+  const body = `<html><head><title>PSP Homebrew Store</title></head>
+<body bgcolor="#101828" text="#e0e0e0" link="#80c0ff" vlink="#80c0ff">
+<h3>PSP Homebrew Store</h3>
+${res.ok ? `<p>Install the store app straight from this PSP:</p>
+<ol>
+<li>Make sure custom firmware (PRO) is loaded.</li>
+<li>Select the link below. When the PSP asks where to save,
+pick the folder <b>/PSP/GAME/HBSTORE/</b> (make the HBSTORE folder if it lets you)
+and keep the name <b>EBOOT.PBP</b>.</li>
+<li>Close the browser. The store is under Game &gt; Memory Stick.</li>
+</ol>
+<p><a href="/EBOOT.PBP">Download EBOOT.PBP${kb}</a></p>
+<p>If the PSP won't let you choose that folder, note what it offers instead.</p>` : "<p>The store app isn't published on this relay yet.</p>"}
+<p><small>Free third-party homebrew. Use at your own risk.</small></p>
+</body></html>`;
+  return new Response(body, {
+    headers: { "content-type": "text/html; charset=iso-8859-1", "cache-control": "no-cache" },
+  });
+}
+
 export default {
   async fetch(request, env) {
     if (request.method !== "GET" && request.method !== "HEAD") return text(405, "GET only", { allow: "GET, HEAD" });
@@ -118,7 +143,17 @@ export default {
 
     if (!(await allowed(env, ip))) return text(429, "slow down", { "retry-after": "60" });
 
-    if (url.pathname === "/") return text(200, "PSP Homebrew Store relay. Point the PSP app at this address.");
+    if (url.pathname === "/" || url.pathname === "/get") return installPage(env, request);
+    if (url.pathname === "/EBOOT.PBP") {
+      // the store app itself, for the PSP's own Internet Browser to save to the memory stick
+      const res = await env.ASSETS.fetch(new Request(new URL("/app/EBOOT.PBP", request.url), request));
+      if (!res.ok) return text(404, "not published yet");
+      const out = new Response(res.body, res);
+      out.headers.set("content-type", "application/octet-stream");
+      out.headers.set("content-disposition", 'attachment; filename="EBOOT.PBP"');
+      out.headers.set("cache-control", "no-cache");
+      return out;
+    }
     if (STATIC.has(url.pathname)) {
       const res = await env.ASSETS.fetch(request);
       if (!res.ok) return text(404, "not published yet");
